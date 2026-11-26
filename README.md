@@ -193,7 +193,7 @@ Przykład dla drzewa o `fid=21` i `numer_inw=D747994`:
 ```text
 Zdjęcie wejściowe: D747994_2_20261016_ParkCeramiczna.JPG
 Zdjęcie wynikowe:  21_2_20261016_ParkCeramiczna.jpg
-nazwa_pliku:      21_2_20261016_ParkCeramiczna
+nazwa_pliku:      21_2_20261016_ParkCeramiczna.jpg
 ```
 
 FID pochodzi z **rekordu drzewa**, wskazanego przez `fid_drzewo`, a nie
@@ -201,9 +201,10 @@ z numeru rekordu załącznika ani pola `id`. Numer zdjęcia, data i opis pozosta
 niezmienione, również gdy opis zawiera podkreślenia. Nazwy już oparte na FID
 są akceptowane.
 
-W GeoPackage nazwy pozostają **bez rozszerzenia**, zgodnie z przyjętą
-konwencją wejściowego pliku. Wymagany wzorzec referencji to
-`identyfikator_numerZdjecia_RRRRMMDD_opis`.
+W wynikowym GeoPackage `nazwa_pliku` jest **dokładnie taka sama jak nazwa
+pliku zdjęcia**, łącznie z jednym rozszerzeniem `.jpg`. Referencje wejściowe
+mogą mieć postać `identyfikator_numerZdjecia_RRRRMMDD_opis` albo zawierać
+rozszerzenie `.jpg` lub `.jpeg`, niezależnie od wielkości liter.
 
 Dopasowanie wymaga identycznej nazwy zdjęcia bez rozszerzenia, łącznie
 z wielkością liter. Rozszerzenia źródłowe `.jpg`, `.JPG` i `.jpeg`
@@ -242,7 +243,7 @@ inwentaryzacyjny. Skrypt realizuje wybrany wariant **FID**; nie dowodzi to,
 że numer inwentaryzacyjny był przyczyną odrzucenia zdjęć przez MoDrzew.
 Rozbieżność daty w nazwie i EXIF nie jest automatycznie poprawiana.
 
-Program wymaga niepustych, poprawnych referencji bez rozszerzenia oraz
+Program wymaga niepustych, poprawnych referencji z rozszerzeniem JPEG lub bez niego oraz
 jednoznacznego powiązania z obsługiwaną warstwą nadrzędną. Nie odtwarza
 brakujących zdjęć ani dowolnych schematów nazewnictwa.
 

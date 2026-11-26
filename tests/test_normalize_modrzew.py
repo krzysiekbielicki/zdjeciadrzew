@@ -55,7 +55,7 @@ class NormalizationTests(unittest.TestCase):
                     (b"untouched geometry",),
                 )
         self.name = "D747994_2_20261016_Park_Ceramiczna"
-        self.target = "21_2_20261016_Park_Ceramiczna"
+        self.target = "21_2_20261016_Park_Ceramiczna.jpg"
 
     @contextlib.contextmanager
     def database(self, path=None):
@@ -105,7 +105,7 @@ class NormalizationTests(unittest.TestCase):
         result, _, errors = self.run_cli(apply=True)
         self.assertEqual(result, 0, errors)
         self.assertEqual(self.snapshot(), before)
-        self.assertEqual((self.output / "images" / (self.target + ".jpg")).read_bytes(),
+        self.assertEqual((self.output / "images" / self.target).read_bytes(),
                          source.read_bytes())
         with self.database(self.output / self.gpkg.name) as copy:
             self.assertEqual(copy.execute(
@@ -131,7 +131,8 @@ class NormalizationTests(unittest.TestCase):
         before = self.snapshot()
         result, text, errors = self.run_cli()
         self.assertEqual(result, 0, errors)
-        self.assertIn(self.target + ".jpg", text)
+        self.assertIn(self.target, text)
+        self.assertNotIn(".jpg.jpg", text)
         self.assertFalse(self.output.exists())
         self.assertEqual(self.snapshot(), before)
 
@@ -161,7 +162,7 @@ class NormalizationTests(unittest.TestCase):
             "../D747994_2_20261016_Park", "D747994_0_20261016_Park",
             "D747994_2_20260230_Park", "D747994_2_20261016_Park.",
             "D123_2_20261016_Park", "D747994_2_20261016_Pa:rk",
-            "D747994_2_20261016_Park.jpg",
+            "D747994_2_20261016_Park.jpg.JPG",
         ]:
             with self.subTest(name=name):
                 with self.assertRaises(app.NormalizationError):
@@ -169,14 +170,54 @@ class NormalizationTests(unittest.TestCase):
 
     def test_polygon_and_already_normalized(self):
         self.attachment(self.target, polygon=True)
-        self.photo(self.target)
+        self.photo(Path(self.target).stem)
         result, _, errors = self.run_cli(apply=True)
         self.assertEqual(result, 0, errors)
         with self.database(self.output / self.gpkg.name) as copy:
             self.assertEqual(copy.execute(
                 "SELECT nazwa_pliku FROM drzewa_umiar_ryz_zalaczniki"
             ).fetchone(), (self.target,))
-        self.assertTrue((self.output / "images" / (self.target + ".jpg")).exists())
+        self.assertTrue((self.output / "images" / self.target).exists())
+
+    def test_input_extensions_normalize_to_exact_filename(self):
+        for index, extension in enumerate((".jpg", ".JPG", ".jpeg", ".JPEG"), 1):
+            with self.subTest(extension=extension):
+                with self.database() as connection:
+                    connection.execute("DELETE FROM drzewa_zalaczniki")
+                self.attachment(self.name + extension)
+                if index == 1:
+                    self.photo(suffix=".JPEG")
+                self.output = self.root / f"extension-{index}"
+                result, text, errors = self.run_cli(apply=True)
+                self.assertEqual(result, 0, errors)
+                self.assertNotIn(".jpg.jpg", text)
+                with self.database(self.output / self.gpkg.name) as copy:
+                    stored = copy.execute(
+                        "SELECT nazwa_pliku FROM drzewa_zalaczniki"
+                    ).fetchone()[0]
+                self.assertEqual(stored, self.target)
+                self.assertEqual([p.name for p in (self.output / "images").iterdir()],
+                                 [stored])
+
+    def test_rerun_corrected_package_is_idempotent(self):
+        self.attachment()
+        self.photo()
+        result, _, errors = self.run_cli(apply=True)
+        self.assertEqual(result, 0, errors)
+        first_output = self.output
+        self.gpkg = first_output / self.gpkg.name
+        self.images = first_output / "images"
+        self.output = self.root / "rerun"
+        before = self.snapshot()
+        result, _, errors = self.run_cli(apply=True)
+        self.assertEqual(result, 0, errors)
+        self.assertEqual(self.snapshot(), before)
+        with self.database(self.output / self.gpkg.name) as copy:
+            self.assertEqual(copy.execute(
+                "SELECT nazwa_pliku FROM drzewa_zalaczniki"
+            ).fetchone(), (self.target,))
+        self.assertEqual([p.name for p in (self.output / "images").iterdir()],
+                         [self.target])
 
     def test_case_insensitive_collision_across_tables(self):
         self.attachment()
@@ -190,7 +231,7 @@ class NormalizationTests(unittest.TestCase):
 
     def test_shared_reference_writes_one_image(self):
         self.attachment()
-        self.attachment(polygon=True)
+        self.attachment(self.name + ".JPEG", polygon=True)
         self.photo()
         result, _, errors = self.run_cli(apply=True)
         self.assertEqual(result, 0, errors)

@@ -82,15 +82,21 @@ def safe_filename(name):
         raise NormalizationError(f"Niedozwolona nazwa pliku Windows: {name!r}.")
 
 
-def target_name(old_name, tree_fid, inventory):
+def reference_stem(old_name):
     if not isinstance(old_name, str):
         raise NormalizationError("Pusta lub nietekstowa nazwa zalacznika.")
     safe_filename(old_name)
     if old_name.lower().endswith((".jpg", ".jpeg")):
-        raise NormalizationError(
-            f"Referencja powinna byc bez rozszerzenia: {old_name!r}."
-        )
-    match = NAME_PATTERN.fullmatch(old_name)
+        old_name = old_name.rsplit(".", 1)[0]
+        if old_name.lower().endswith((".jpg", ".jpeg")):
+            raise NormalizationError("Podwojne rozszerzenie JPEG w referencji.")
+    safe_filename(old_name)
+    return old_name
+
+
+def target_name(old_name, tree_fid, inventory):
+    stem = reference_stem(old_name)
+    match = NAME_PATTERN.fullmatch(stem)
     if not match:
         raise NormalizationError(
             f"Niepoprawny wzorzec nazwy (identyfikator_numer_data_opis): {old_name!r}."
@@ -107,8 +113,8 @@ def target_name(old_name, tree_fid, inventory):
             f"Nazwa {old_name!r} nie odpowiada FID {tree_fid} "
             f"ani numerowi inwentaryzacyjnemu {inventory!r}."
         )
-    new_name = f"{tree_fid}_{old_name.split('_', 1)[1]}"
-    safe_filename(new_name + ".jpg")
+    new_name = f"{tree_fid}_{stem.split('_', 1)[1]}.jpg"
+    safe_filename(new_name)
     return new_name
 
 
@@ -168,21 +174,22 @@ def build_plan(connection, images):
                 if tree_fid is None:
                     raise NormalizationError(f"Brak drzewa FID {linked_fid!r}.")
                 new_name = target_name(old_name, tree_fid, inventory)
-                candidates = sources.get(old_name, [])
+                stem = reference_stem(old_name)
+                candidates = sources.get(stem, [])
                 used.update(candidates)
                 source = candidates[0] if len(candidates) == 1 else None
                 if not candidates:
-                    plan.errors.append(f"{context}: brak zdjecia {old_name}.jpg.")
+                    plan.errors.append(f"{context}: brak zdjecia {stem}.jpg.")
                 elif len(candidates) > 1:
                     plan.errors.append(
                         f"{context}: wiele plikow dla {old_name!r}: "
                         + ", ".join(p.name for p in candidates)
                     )
-                key = (new_name + ".jpg").casefold()
-                current = (new_name, source, old_name)
+                key = new_name.casefold()
+                current = (new_name, source, stem)
                 if key in targets and targets[key] != current:
                     raise NormalizationError(
-                        f"Kolizja nazwy wynikowej Windows: {new_name}.jpg."
+                        f"Kolizja nazwy wynikowej Windows: {new_name}."
                     )
                 targets[key] = current
                 plan.conversions.append(Conversion(
@@ -324,7 +331,7 @@ def publish(connection, gpkg, output, plan):
         for item in plan.conversions:
             if item.new_name not in results:
                 results[item.new_name] = process_image(
-                    item.source, image_output / (item.new_name + ".jpg")
+                    item.source, image_output / item.new_name
                 )
 
         copied = sqlite3.connect(staging / gpkg.name)
@@ -355,7 +362,7 @@ def publish(connection, gpkg, output, plan):
                         actual[(table, fid)] = name
             if actual != expected:
                 raise NormalizationError("Referencje w kopii nie odpowiadaja planowi.")
-            expected_images = {name + ".jpg" for name in actual.values()}
+            expected_images = set(actual.values())
             if {p.name for p in image_output.iterdir()} != expected_images:
                 raise NormalizationError("Niekompletny katalog zdjec wynikowych.")
         finally:
@@ -409,7 +416,7 @@ def main(argv=None):
                 status = ""
                 if item.source and item.source.stat().st_size > MAX_BYTES:
                     status = " [wymaga kompresji]"
-                print(f"  {item.old_name} -> {item.new_name}.jpg{status}")
+                print(f"  {item.old_name} -> {item.new_name}{status}")
             if plan.unmatched:
                 print("Pliki bez referencji (bez zmian): " + ", ".join(plan.unmatched))
             if plan.errors:
